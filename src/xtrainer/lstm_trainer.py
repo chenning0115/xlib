@@ -79,6 +79,8 @@ class BatchPeriodSampling(object):
 
 
 
+
+
 class LSTMModel(object):
     def __init__(self, period=20, feature_num=10, unit_num=8, fc1_num=8, fc2_num=1, lr=0.01, clip_grads_max=8):
         self.period = period
@@ -226,21 +228,32 @@ class LSTMTrainer(BaseTrainer):
     """LSTM trainer
     one step
     """
-    def __init__(self, _dp, _path_prefix):
+    def __init__(self, _dp, _path_prefix,
+                batch_size = 64,
+                step_size = 30,
+                is_epoch = True,
+                epoch_num = 10,
+                feature_num = 61,
+                unit_num = 16,
+                fc1_num = 16,
+                fc2_num=1,
+                lr=0.02,
+                clip_grads_max=8
+            ):
         super().__init__(_dp, _path_prefix)
         # train parameters
-        self.batch_size = 64
-        self.step_size = 100
-        self.is_epoch = True
-        self.epoch_num = 20
+        self.batch_size = batch_size
+        self.step_size = step_size
+        self.is_epoch = is_epoch
+        self.epoch_num = epoch_num
 
         # model parameters
-        self.feature_num=25
-        self.unit_num=16
-        self.fc1_num=16
-        self.fc2_num=1
-        self.lr=0.02
-        self.clip_grads_max=8
+        self.feature_num=feature_num
+        self.unit_num=unit_num
+        self.fc1_num=fc1_num
+        self.fc2_num=fc2_num
+        self.lr=lr
+        self.clip_grads_max=clip_grads_max
 
         self.bps = None
 

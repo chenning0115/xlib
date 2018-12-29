@@ -16,14 +16,17 @@ def dataset_monitor_value():
     features += ["$('MonitorValue')"]
     names += ['raw_value']
 
+    #前N个时间节点的绝对值
+    features += ["Ref($('MonitorValue'),%s)" % i for i in range(1,15)]
     # 历史均值、 最大值、 最小值、 标准差、 峰度、 偏度
-    for ts in ['RMean', 'RMax', 'RMin', 'RStd', 'RKurt', 'RSkew']:
-        features += ["%s($('MonitorValue'),%s)" % (ts,i) for i in [5,15,30,60]]
-        names += ["%s_%s" % (ts,i) for i in [5,15,30,60]]
+    # for ts in ['RMean', 'RMax', 'RMin', 'RStd', 'RKurt', 'RSkew']:
+    #     features += ["%s($('MonitorValue'),%s)" % (ts,i) for i in [15,20,25,30,35,40,45,50,55,60]]
+    #     names += ["%s_%s" % (ts,i) for i in [15,20,25,30,35,40,45,50,55,60]]
 
     # label数据
     label_names = ['LABEL0']
     labels = ["Ref($('MonitorValue'),-1)"]
+    # labels = ["$('MonitorValue')"]
 
     feature_dict = OrderedDict({})
     for n,f in zip(names, features):
@@ -32,6 +35,44 @@ def dataset_monitor_value():
         feature_dict[n] = f
     df = eval_dataset(feature_dict) 
     return df, names, label_names
+
+
+#用于多步预测
+#test_window=30 1个小时的时间预测
+def dataset_monitor_value_period():
+    # 特征数据
+    x_names = []
+    features = []
+    # 当前天的监测值
+    features += ["$('MonitorValue')"]
+    x_names += ['raw_value']
+
+    #前N个时间节点的绝对值
+    features += ["Ref($('MonitorValue'),%s)" % i for i in range(1,5)]
+    x_names += ["previous_value_%s" % i for i in range(1,5)]
+
+    # 历史均值、 最大值、 最小值、 标准差、 峰度、 偏度
+    for ts in ['RMean', 'RMax', 'RMin', 'RStd']:
+        features += ["%s($('MonitorValue'),%s)" % (ts,i) for i in [10,15,20,25,30]]
+        x_names += ["%s_%s" % (ts,i) for i in [10,15,20,25,30]]
+
+    # 开始准备y的features
+    y_names = []
+
+    names = x_names + y_names
+    # label数据
+    label_names = ['LABEL0']
+    labels = ["Ref($('MonitorValue'),-1)"]
+    # labels = ["$('MonitorValue')"]
+
+    feature_dict = OrderedDict({})
+    for n,f in zip(names, features):
+        feature_dict[n] = f
+    for n,f in zip(label_names, labels):
+        feature_dict[n] = f
+    df = eval_dataset(feature_dict) 
+
+    return df, x_names,y_names,label_names
 
 
     
@@ -52,9 +93,22 @@ if __name__ == '__main__':
     from xtrainer.base_trainer import LgbRegTrainer
     from xtrainer.lstm_trainer import LSTMTrainer
     dp = gen_monitor_dp()
-    dp.data.to_pickle('../../data/feature_monitor.pkl')
-    path_prefix = '../res/lstm_one_step_test'
+    print('load data done. shape=%s' % str(dp.data.shape))
+    # dp.data.to_pickle('../../data/feature_monitor.pkl')
+    path_prefix = '../res/lstm_feature_1'
     if not os.path.exists(path_prefix):
         os.makedirs(path_prefix)
-    lgb_trainer = LSTMTrainer(dp, path_prefix)
+    model_args = {
+        'batch_size' : 256,
+        'step_size'  : 30,
+        'is_epoch' : True,
+        'epoch_num' : 5,
+        'feature_num' : dp.get_final_feature_num(),
+        'unit_num' : 16,
+        'fc1_num' : 16,
+        'fc2_num' : 1,
+        'lr':0.02,
+        'clip_grads_max':8
+    }
+    lgb_trainer = LSTMTrainer(dp, path_prefix, **model_args)
     lgb_trainer.run()
