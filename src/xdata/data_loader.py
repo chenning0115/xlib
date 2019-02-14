@@ -49,7 +49,8 @@ class MonitorValueXDataLoader(XDataLoader):
         self.path_prefix = _path_prefix
 
         # self.data_file = '044A02上隅角.max.pkl'
-        self.data_file = '044A02上隅角_2min.mean.pkl'
+        # TODO::Now is diff dataset!!!
+        self.data_file = 'gas_censor.pkl'
         self.start_str = '2017-09-15 00:00:00'
         self.end_str = '2018-05-01 00:00:00'
         self.freq = '2min'
@@ -76,7 +77,7 @@ class MonitorValueXDataLoader(XDataLoader):
         
 
     def load_data(self):
-        data = pd.read_pickle(self.path_data)
+        data = pd.read_pickle(self.path_data) * 10
         data = data.reset_index()
         data['Time'] = data['Time'].apply(lambda x: pd.Timestamp(x))
         data = data.sort_values(['SensorID', 'Time']).set_index(['SensorID', 'Time'], drop=True)

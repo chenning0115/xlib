@@ -59,7 +59,8 @@ class DataPrepare(object):
 
 class  TimeWindowDataPrepare(object):
     def __init__(self, _df_data, _ori_x_features, _ori_y_features, _ori_label, _date,
-                        batch_size=128, train_window = 30, test_window=5, epoch_num=3
+                        batch_size=1024, train_window = 5, test_window=1, raw_label_input_size=1, epoch_num=50,
+                        normalize_features = True
         ):
         self.df_data = _df_data
         self.ori_x_features = _ori_x_features # not include any labels
@@ -70,7 +71,12 @@ class  TimeWindowDataPrepare(object):
         self.batch_size = batch_size
         self.train_window = train_window
         self.test_window = test_window
-        self.step_size = train_window + test_window
+        self.raw_label_input_size = raw_label_input_size
+
+        # 注意，step_size这里之所以会减去1是因为df的每一行数据中label为该行特征作为输入时，需要预测的label，
+        # 因此多步预测时，真正的test_window与train_window有一个重合步
+        self.step_size = train_window + test_window - 1 
+
         self.epoch_num = epoch_num
 
         self.final_features = None
@@ -82,7 +88,7 @@ class  TimeWindowDataPrepare(object):
         # print(self.dates)
 
         self.fill_nan = True #此种模式下必须强制fill nan，保证时间序列的连续性
-
+        self.normalize_features = normalize_features # 默认需要进行列的标准化
         self.data = self.prepare(self.df_data)
 
         self.train_data, self.valid_data, self.test_data = self.__split_date(self.data)
@@ -114,6 +120,11 @@ class  TimeWindowDataPrepare(object):
         data = data[~pd.isnull(data[self.final_label])]
 
         self.final_features = self.final_x_features + self.final_y_features
+
+        if self.normalize_features:
+            for fea in self.final_features:
+                data[fea] = (data[fea] - data[fea].mean())/data[fea].std()
+
         cols = self.final_features + [self.final_label] #confirm last column is the final label and other cols not inclue any labels.
         data = data[cols]
         return data
@@ -141,7 +152,7 @@ class  TimeWindowDataPrepare(object):
         -----------
         data: pd.DataFrame
         batch_size: int  for batch size
-        step_size, train_window, test_window: int assert train + test == step
+        step_size, train_window, test_window: int assert train + test - 1 == step
         epoch_num: int for epoch num
 
         Returns:
@@ -151,7 +162,7 @@ class  TimeWindowDataPrepare(object):
         label: ndarray [batch, step, 1]
 
         """
-        assert step_size == (train_window + test_window)
+        assert step_size == (train_window + test_window - 1)
         indexes = np.arange(data.shape[0] - step_size)
         shuffled_indexes = indexes[:]
         np.random.shuffle(shuffled_indexes)
@@ -177,9 +188,10 @@ class  TimeWindowDataPrepare(object):
             batch_pre_label = []
             for i in select_indexes:
                 batch_data_x_features.append(data_x_features.iloc[i:i+train_window,:].values)
-                batch_data_y_features.append(data_y_features.iloc[i+train_window:i+step_size,:].values)
-                batch_data_label.append(data_label.iloc[i+train_window:i+step_size].values)
-                batch_pre_label.append(data_label.iloc[i+train_window-1])
+                batch_data_y_features.append(data_y_features.iloc[i+train_window-1:i+step_size,:].values) #i+train_window-1是由于data中的train_window,test_window间会有一个重合步
+                batch_data_label.append(data_label.iloc[i+train_window-1:i+step_size].values)
+                batch_pre_label.append(data_label.iloc[i+train_window-1-self.raw_label_input_size:
+                                                        i+train_window-1].values) #i+train_window-1位置的值对应于本次预测的第一个label
             
             yield (np.stack(batch_data_x_features),
                   np.stack(batch_data_y_features),
@@ -195,8 +207,8 @@ class  TimeWindowDataPrepare(object):
         
 
     def generate_valid_test_batch(self, data, step_size, train_window, test_window):
-        assert train_window + test_window == step_size
-        indexes = np.arange(data.shape[0] - step_size)
+        assert train_window + test_window - 1 == step_size
+        indexes = np.arange(data.shape[0] - step_size) # 注意这里使得少了最后一个预测的值
         batch_size = len(indexes) 
         # 开始按照生成的select_indexes来进行切分
         data_x_features = data[self.final_x_features]
@@ -209,9 +221,10 @@ class  TimeWindowDataPrepare(object):
         batch_pre_label = []
         for i in indexes:
             batch_data_x_features.append(data_x_features.iloc[i:i+train_window,:].values)
-            batch_data_y_features.append(data_y_features.iloc[i+train_window:i+step_size,:].values)
-            batch_data_label.append(data_label.iloc[i+train_window:i+step_size].values)
-            batch_pre_label.append(data_label.iloc[i+train_window-1])
+            batch_data_y_features.append(data_y_features.iloc[i+train_window-1:i+step_size,:].values)
+            batch_data_label.append(data_label.iloc[i+train_window-1:i+step_size].values)
+            batch_pre_label.append(data_label.iloc[i+train_window-1-self.raw_label_input_size:
+                                                        i+train_window-1].values)
         return (batch_size, np.stack(batch_data_x_features),
                 np.stack(batch_data_y_features),
                 np.stack(batch_data_label),
@@ -237,7 +250,7 @@ def unit_test():
     from dataset_monitor import dataset_monitor_value_period
     df, x_cols, y_cols, label_cols = dataset_monitor_value_period()
 
-    _date = ['2017-11-01 00:00:00','2017-11-27 00:00:00','2017-11-27 00:00:00','2017-11-29 00:00:00','2017-11-29 00:00:00','2017-11-30 00:00:00']
+    _date = ['2017-11-27 00:00:00','2017-11-28 00:00:00','2017-11-29 00:00:00','2017-11-30 00:00:00','2017-11-29 00:00:00','2017-11-30 00:00:00']
     dp = TimeWindowDataPrepare(df, x_cols, y_cols, label_cols[0], _date)
     dp.train_batch()
 

@@ -37,6 +37,13 @@ def dataset_monitor_value():
     return df, names, label_names
 
 
+# ['009A13', '044A02', '044A03', '044A09', '044A11', '044A15']
+# 009A13：工作面进风甲烷
+# 044A02：上隅角甲烷
+# 044A03：工作面回风甲烷
+# 044A09：粉尘
+# 044A11：回风混合甲烷
+# 044A15：回风混合风速
 #用于多步预测
 #test_window=30 1个小时的时间预测
 def dataset_monitor_value_period():
@@ -44,25 +51,53 @@ def dataset_monitor_value_period():
     x_names = []
     features = []
     # 当前天的监测值
-    features += ["$('MonitorValue')"]
-    x_names += ['raw_value']
+    for c in ['009A13','044A02','044A09']:
+        #当前时间节点的值
+        features += ["$('%s')" % c]
+        x_names += ['raw_value_%s' % c]
 
-    #前N个时间节点的绝对值
-    features += ["Ref($('MonitorValue'),%s)" % i for i in range(1,5)]
-    x_names += ["previous_value_%s" % i for i in range(1,5)]
+        # #前N个时间节点的绝对值
+        # l = 5
+        # features += ["Ref($('%s'),%s)" % (c,i) for i in range(1,l)]
+        # x_names += ["previous_value_%s_%s" % (c,i) for i in range(1,l)]
+
+        # 当前时间节点与之前时间节点的差值
+        kr = 5
+        features += ["$('%s') - Ref($('%s'),%s)" % (c,c,i) for i in range(1, kr)]
+        x_names += ["previous_diff_value_%s_%s" % (c,i) for i in range(1, kr)]
+
+        # 滚动差值
+        k = 5
+        features += ["Ref($('%s'),%s) - Ref($('%s'),%s)" % (c,i,c,i+1) for i in range(k)]
+        x_names += ["previous_rolling_diff_value_%s_%s" % (c,i) for i in range(k)]
+
+    # # 测试是否引入未来信息
+    # features += ["Ref($('044A02'),-1)"]
+    # x_names += ["test_label"]
 
     # 历史均值、 最大值、 最小值、 标准差、 峰度、 偏度
-    for ts in ['RMean', 'RMax', 'RMin', 'RStd']:
-        features += ["%s($('MonitorValue'),%s)" % (ts,i) for i in [10,15,20,25,30]]
-        x_names += ["%s_%s" % (ts,i) for i in [10,15,20,25,30]]
+    # for ts in ['RMean','RStd']:
+    #     features += ["%s($('MonitorValue'),%s)" % (ts,i) for i in [10,15,20,25,30]]
+    #     x_names += ["%s_%s" % (ts,i) for i in [10,15,20,25,30]]
+
+    # 不同传感器间差值
+    # target_sensor = '044A02'
+    # diff_sensor = ['009A13']
+    # for s in diff_sensor:
+    #     features += ["$('%s') - Ref($('%s'),%s)" % (target_sensor, s, 1)]
+    #     x_names += ["diff(%s,(%s,%s))" % (target_sensor, s, 1)]
 
     # 开始准备y的features
+
     y_names = []
 
     names = x_names + y_names
     # label数据
     label_names = ['LABEL0']
-    labels = ["Ref($('MonitorValue'),-1)"]
+    labels = ["Ref($('044A02'),-1) - $('044A02')"]
+
+    label_restore_names = ['LABEL_STORE']
+    label_restore = ["Ref($('044A02'),-1) - $('044A02')"]
     # labels = ["$('MonitorValue')"]
 
     feature_dict = OrderedDict({})
@@ -70,9 +105,11 @@ def dataset_monitor_value_period():
         feature_dict[n] = f
     for n,f in zip(label_names, labels):
         feature_dict[n] = f
+    for n,f in zip(label_restore_names, label_restore):
+        feature_dict[n] = f
     df = eval_dataset(feature_dict) 
 
-    return df, x_names,y_names,label_names
+    return df, x_names,y_names,label_names,label_restore_names
 
 
     
